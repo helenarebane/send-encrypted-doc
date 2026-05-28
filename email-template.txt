@@ -1,0 +1,6 @@
+Tere, {{name}},
+
+Lisatud on teie krüpteeritud fail.
+
+Lugupidamisega,
+Nimi
