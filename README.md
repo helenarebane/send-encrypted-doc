@@ -42,7 +42,7 @@ Edit the email template in the script folder (`email-template.txt`).
 Put [asutus].xslx (the file(s) you want to encrypt) and your recipients CSV into a single folder. The files you're encrypting
 must be named [asutus].xslx.
 
-> ⚠️ **Important Your recipients.csv file must have a header row and look exactly like this (use UTF-8 encoding if names have special
+> ⚠️ **Important** Your recipients.csv file must have a header row and look exactly like this (use UTF-8 encoding if names have special
 characters like õ, ä, ö, ü):
 > ```
 > asutus;kood;e-mail

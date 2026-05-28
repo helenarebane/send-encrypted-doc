@@ -4,6 +4,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
 
+from helpers.format import print_yellow, print_red
+
 
 def valid_file(path_str, allowed_extensions=None):
     path = Path(path_str)
@@ -19,13 +21,13 @@ def get_valid_file_path(cli_arg, allowed_extensions=None):
     path_str = cli_arg if cli_arg else get_file_via_gui()
 
     if not path_str:
-        print("No file selected. Exiting.")
+        print_yellow("No file selected. Exiting.")
         sys.exit(0)
 
     try:
         return valid_file(path_str, allowed_extensions)
     except argparse.ArgumentTypeError as e:
-        print(f"Validation Error: {e}")
+        print_red(f"Validation Error: {e}")
         sys.exit(1)
 
 

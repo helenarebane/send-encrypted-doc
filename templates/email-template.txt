@@ -1,4 +1,4 @@
-Tere, {{name}},
+Tere, {{name}}
 
 Lisatud on teie krüpteeritud fail.
 

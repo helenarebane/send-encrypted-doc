@@ -3,11 +3,12 @@ import datetime
 import os
 import subprocess
 
-from helpers.email import open_email_with_attachment
+from helpers.email import open_email_with_attachment, validate_email_template_exists
 from helpers.file import *
 from helpers.format import *
 
 CLI_JAR = 'cdoc2-cli-1.9.0.jar'
+
 
 def main():
     if not os.path.exists(CLI_JAR):
@@ -19,6 +20,9 @@ def main():
     parser.add_argument("-s", '--send-automatically',
                         action='store_true', help="Send email automatically.")
     args = parser.parse_args()
+
+    if args.send_automatically:
+        validate_email_template_exists()
 
     file_path = get_valid_file_path(args.input_file, ['.csv'])
 
@@ -60,6 +64,9 @@ def main():
                 output_file = f"{result_file_dir}/{name.replace(' ', '_')}.cdoc2"
                 print_purple(f"  -> Encrypting for {name} ({id_code})...")
 
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+
                 command = [
                     "java",
                     "-jar", CLI_JAR,
@@ -74,9 +81,11 @@ def main():
                 if result.returncode == 0:
                     print_green(f"  -> Success: {output_file}")
                     open_email_with_attachment(name, email, output_file, args.send_automatically)
-                    ##if result.stdout:
-                    ##print(f"     Tool Output: {result.stdout.strip()}")
+                    # if result.stdout:
+                    # print(f"     Tool Output: {result.stdout.strip()}")
                 else:
+                    if result.stdout:
+                        print(f"     Tool Output: {result.stdout.strip()}")
                     print_orange(f"   -> FAILED (Return Code: {result.returncode})")
                     error_info_lines = [line for line in result.stderr.split('\n') if "[main] INFO" in line]
                     if len(error_info_lines) > 0:
@@ -91,24 +100,24 @@ def main():
                 encryption_failed_entities.append({name, id_code, email})
 
     if len(encryption_failed_entities) == 0:
-        print_green(" -> All files encrypted successfully.")
+        print_green("All files encrypted successfully.")
+        return
+
+    if len(encryption_failed_entities) == entity_row_count:
+        print_red("Encryption failed for all entities.")
     else:
-        if len(encryption_failed_entities) == entity_row_count:
-            print_red(
-                f"  -> Encryption failed for all entities.")
-        elif len(encryption_failed_entities) > 0:
-            print_red(
-                f"  -> Encryption failed for \n     {'\n      '.join(str(entity).strip('{').strip('}') for entity in encryption_failed_entities)}")
+        print_red(
+            f"  -> Encryption failed for \n     {'\n      '.join(str(entity).strip('{').strip('}') for entity in encryption_failed_entities)}")
 
-            tz = datetime.timezone(datetime.timedelta(hours=3))
-            failed_entities_filename = "{write_dir}/failed-{date:%Y-%m-%d_%H:%M:%S}.csv".format(
-                write_dir=result_file_dir, date=datetime.datetime.now(tz=tz))
+        tz = datetime.timezone(datetime.timedelta(hours=3))
+        failed_entities_filename = "{write_dir}/failed-{date:%Y-%m-%d_%H:%M:%S}.csv".format(
+            write_dir=result_file_dir, date=datetime.datetime.now(tz=tz))
 
-            with open(failed_entities_filename, 'w') as f:
-                writer = csv.writer(f, delimiter=';')
-                writer.writerow(["asutus", "kood", "e-mail"])
-                writer.writerows(encryption_failed_entities)
-                print(f"  -> Failed rows written to new document {failed_entities_filename}.")
+        with open(failed_entities_filename, 'w') as f:
+            writer = csv.writer(f, delimiter=';')
+            writer.writerow(["asutus", "kood", "e-mail"])
+            writer.writerows(encryption_failed_entities)
+            print(f"  -> Failed rows written to new document {failed_entities_filename}.")
 
 
 if __name__ == "__main__":

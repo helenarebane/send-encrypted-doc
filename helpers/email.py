@@ -1,16 +1,24 @@
 import os
 import platform
 import subprocess
+import sys
 
 from helpers.format import print_red, print_green, print_yellow, print_purple
 
 
+def validate_email_template_exists():
+    if not os.path.exists('templates/email-template.txt'):
+        print_red(f"Error: Email template file not found.")
+        sys.exit(1)
+
+
 def get_email_body(name):
-    if os.path.exists('../email-template.txt'):
-        with open('../email-template.txt', 'r', encoding='utf-8') as f:
+    try:
+        with open('templates/email-template.txt', 'r', encoding='utf-8') as f:
             template = f.read()
-        return template.replace("{{name}}", name)
-    return f"Tere {name},\n\nLisatud on teie krüpteeritud fail.\n\nLugupidamisega\n"
+            return template.replace("{{name}}", name)
+    except FileNotFoundError:
+        return ''
 
 
 def open_email_with_attachment(recipient_name, email_address, attachment_path, send_immediately=False):
