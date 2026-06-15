@@ -31,9 +31,26 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-### Email Template
+### Email template
 
-Edit the email template in the script folder (`email-template.txt`).
+Edit the email template (`templates/email-template.txt`). 
+
+> ⚠️ **Important** Always keep subject line at the top of the template file, followed by the content. 
+> ```bash
+> Subject: <Your subject line>
+> <content>
+> 
+> # Example
+> Subject: Your encrypted file 
+> 
+> Hello {{ name }}
+> 
+> [...]
+> 
+> Best,
+> Your Name
+>```
+
 
 ---
 
@@ -53,7 +70,7 @@ characters like õ, ä, ö, ü):
 
 ---
 
-## Running the Script
+# Running the Script
 
 Run the script by pointing it to your CSV file:
 
@@ -78,6 +95,7 @@ If encryption throws javax.naming.CommunicationException: simple bind failed: es
 TLS_RSA_* in the jdk.tls.disabledAlgorithms in jdk/conf/security/java.security.
 
 ```bash
+## MacOS ##
 sed -i '' '/^jdk\.tls\.disabledAlgorithms=/{:loop
 /\\$/{N
 b loop
@@ -88,7 +106,12 @@ s/TLS_RSA_\*,[[:space:]]*//g
 # Verify
 grep -A5 '^jdk.tls.disabledAlgorithms=' \
 "$JAVA_HOME/conf/security/java.security"
+
+## Windows (PowerShell) ##
+$p=(java -XshowSettings:properties -version 2>&1 | Select-String 'java.home').ToString().Split('=')[1].Trim(); $f=Join-Path $p 'conf\security\java.security'; $c=Get-Content $f -Raw; $c=[regex]::Replace($c,'(?ms)(^jdk\.tls\.disabledAlgorithms=.*?(?=^\S|\z))',{param($m) $m.Value -replace 'TLS_RSA_\*,\s*',''}); Set-Content $f $c
+
 ```
+
 
 ### CLI tool info
 

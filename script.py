@@ -1,17 +1,16 @@
 import csv
 import datetime
-import os
 import subprocess
 
 from helpers.email import open_email_with_attachment, validate_email_template_exists
 from helpers.file import *
 from helpers.format import *
 
-CLI_JAR = 'cdoc2-cli-1.9.0.jar'
+CLI_JAR = Path('cdoc2-cli-1.9.0.jar')
 
 
 def main():
-    if not os.path.exists(CLI_JAR):
+    if not CLI_JAR.exists():
         print(f"Error: Cannot find '{CLI_JAR}'.")
         sys.exit(1)
 
@@ -24,11 +23,11 @@ def main():
     if args.send_automatically:
         validate_email_template_exists()
 
-    file_path = get_valid_file_path(args.input_file, ['.csv'])
+    file_path = Path(get_valid_file_path(args.input_file, ['.csv']))
 
-    file_dir = os.path.dirname(os.path.abspath(file_path))
-    result_file_dir = f"{file_dir}/results"
-    os.makedirs(result_file_dir, exist_ok=True)
+    file_dir = file_path.resolve().parent
+    result_file_dir = file_dir / "results"
+    result_file_dir.mkdir(parents=True, exist_ok=True)
 
     print_bright_purple("Starting batch encryption...\n")
 
@@ -52,7 +51,7 @@ def main():
             try:
                 print(f"DEBUG: Read name: '{name}', ID: '{id_code}'")
 
-                file_to_encrypt = f"{file_dir}/{name}.xlsx"
+                file_to_encrypt = file_dir / f"{name}.xlsx"
 
                 print(f"DEBUG: Encrypting file {file_to_encrypt}")
 
@@ -61,26 +60,28 @@ def main():
                         f"  -> Skipping Row {row_number}: Missing data. Check .csv delimiter is ';' if no data is read from input file.")
                     continue
 
-                output_file = f"{result_file_dir}/{name.replace(' ', '_')}.cdoc2"
+                output_file = result_file_dir / f"{name.replace(' ', '_')}.cdoc2"
                 print_purple(f"  -> Encrypting for {name} ({id_code})...")
 
-                if os.path.exists(output_file):
-                    os.remove(output_file)
+                try:
+                    output_file.unlink(missing_ok=True)
+                except FileNotFoundError:
+                    pass
 
                 command = [
                     "java",
-                    "-jar", CLI_JAR,
+                    "-jar", str(CLI_JAR),
                     "create",
                     f"--file={output_file}",
                     f"--recipient={id_code}",
-                    file_to_encrypt
+                    str(file_to_encrypt)
                 ]
 
                 result = subprocess.run(command, capture_output=True, text=True)
 
                 if result.returncode == 0:
                     print_green(f"  -> Success: {output_file}")
-                    open_email_with_attachment(name, email, output_file, args.send_automatically)
+                    open_email_with_attachment(name, email, str(output_file), args.send_automatically)
                     # if result.stdout:
                     # print(f"     Tool Output: {result.stdout.strip()}")
                 else:
@@ -110,8 +111,8 @@ def main():
             f"  -> Encryption failed for \n     {'\n      '.join(str(entity).strip('{').strip('}') for entity in encryption_failed_entities)}")
 
         tz = datetime.timezone(datetime.timedelta(hours=3))
-        failed_entities_filename = "{write_dir}/failed-{date:%Y-%m-%d_%H:%M:%S}.csv".format(
-            write_dir=result_file_dir, date=datetime.datetime.now(tz=tz))
+        failed_entities_filename = result_file_dir / "failed-{date:%Y-%m-%d_%H-%M-%S}.csv".format(
+            date=datetime.datetime.now(tz=tz))
 
         with open(failed_entities_filename, 'w') as f:
             writer = csv.writer(f, delimiter=';')

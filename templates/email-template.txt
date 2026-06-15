@@ -1,3 +1,5 @@
+Subject: Teie krüpteeritud fail
+
 Tere, {{name}}
 
 Lisatud on teie krüpteeritud fail.

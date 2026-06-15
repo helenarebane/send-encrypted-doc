@@ -1,108 +1,130 @@
-import os
 import platform
 import subprocess
 import sys
+import urllib.parse
+import webbrowser
+from pathlib import Path
 
-from helpers.format import print_red, print_green, print_yellow, print_purple
+from helpers.format import print_red, print_green, print_yellow, print_purple, print_orange
+
+TEMPLATE_PATH = Path('templates/email-template.txt')
+DEFAULT_SUBJECT = "Teie krüpteeritud fail"
 
 
 def validate_email_template_exists():
-    if not os.path.exists('templates/email-template.txt'):
+    if not Path('templates/email-template.txt').exists():
         print_red(f"Error: Email template file not found.")
         sys.exit(1)
 
 
-def get_email_body(name):
+def parse_template(name: str) -> tuple[str, str]:
     try:
-        with open('templates/email-template.txt', 'r', encoding='utf-8') as f:
-            template = f.read()
-            return template.replace("{{name}}", name)
+        content = TEMPLATE_PATH.read_text(encoding='utf-8').strip()
+        subject, body = DEFAULT_SUBJECT, content
+
+        if content.startswith("Subject:"):
+            lines = content.splitlines()
+            subject = lines[0].replace("Subject:", "", 1).strip()
+            body = "\n".join(lines[1:]).strip()
+
+        return subject.replace("{{name}}", name), body.replace("{{name}}", name)
     except FileNotFoundError:
-        return ''
+        print_red(f"Error: Email template file not found at {TEMPLATE_PATH}")
+        sys.exit(1)
 
 
-def open_email_with_attachment(recipient_name, email_address, attachment_path, send_immediately=False):
-    print(f"DEBUG: Sending encrypted file '{attachment_path}' to '{recipient_name}', email: '{email_address}'")
+def fallback_to_mailto(email_address: str, subject: str, body: str) -> None:
+    print_yellow("  -> Falling back to default system mail client. Please attach files manually before sending.")
+    sub_enc, body_enc = urllib.parse.quote(subject), urllib.parse.quote(body)
+    webbrowser.open(f"mailto:{email_address}?subject={sub_enc}&body={body_enc}")
 
-    abs_path = os.path.abspath(attachment_path)
-    if not os.path.exists(abs_path):
-        print(f"  -> ERROR: File not found at {abs_path}")
-        return
 
-    subject = "Teie krüpteeritud fail"
-    body = get_email_body(recipient_name)
+def handle_windows_outlook(email_address: str, subject: str, body: str, abs_path: Path, send_immediately: bool) -> bool:
+    try:
+        import win32com.client as win32
+        mail = win32.Dispatch('Outlook.Application').CreateItem(0)
+        mail.To, mail.Subject, mail.Body = email_address, subject, body
+        mail.Attachments.Add(str(abs_path))
+        if send_immediately:
+            mail.Send()
+            print_green("  -> Email sent via Outlook.")
+        else:
+            mail.Display()
+            print_green("  -> Draft opened in Outlook.")
+        print_green(f"  -> Successfully processed via Outlook.")
+        return True
+    except Exception as e:
+        print_red(f"  -> Failed to open Outlook: {e}")
+        return False
+
+
+def handle_mac_applescript(app_name: str, email_address: str, subject: str, body: str, abs_path: Path,
+                           send_immediately: bool) -> bool:
+    send_clause = 'send newMessage' if send_immediately else ''
+
+    safe_subject = subject.replace('"', '\\"')
     safe_body = body.replace('"', '\\"')
 
-    if platform.system() == "Windows":
-        try:
-            import win32com.client as win32
-            outlook = win32.Dispatch('Outlook.Application')
-            mail = outlook.CreateItem(0)
-            mail.To = email_address
-            mail.Subject = subject
-            mail.Body = body
-            mail.Attachments.Add(abs_path)
-            if send_immediately:
-                mail.Send()
-                print_green("  -> Email sent via Outlook (Windows).")
-            else:
-                mail.Display()
-                print_green("  -> Draft opened in Outlook.")
-        except Exception as e:
-            print_red(f"  -> Failed to open Outlook: {e}")
-
-    elif platform.system() == "Darwin":
-
-        applescript_action = "send newMessage" if send_immediately else ""
-
-        scripts = {
-            "Mail": f'''
-                    tell application "Mail"
-                        set newMessage to make new outgoing message with properties {{subject:"{subject}", content:"{safe_body}", visible:true}}
-                        tell newMessage
-                            make new to recipient at end of to recipients with properties {{address:"{email_address}"}}
-                            tell content
-                                make new attachment with properties {{file name:(POSIX file "{abs_path}")}} at after last paragraph
-                            end tell
-                        end tell
-                        activate
-                        {applescript_action}
+    if app_name == "Mail":
+        script = f'''
+                tell application "Mail"
+                    activate
+                    set newMessage to make new outgoing message with properties {{subject:"{safe_subject}", content:"{safe_body}", visible:true}}
+                    tell newMessage
+                        make new to recipient at end of to recipients with properties {{address:"{email_address}"}}
+                        make new attachment with properties {{file name:POSIX file "{abs_path}"}} at after character -1 of content
                     end tell
-                ''',
-
-            "Microsoft Outlook": f'''
-                    tell application "Microsoft Outlook"
-                        set newMessage to make new outgoing message with properties {{subject:"{subject}", content:"{safe_body}", visible:true}}
-                        tell newMessage
-                            make new to recipient at end of to recipients with properties {{address:"{email_address}"}}
-                            make new attachment with properties {{file name:(POSIX file "{abs_path}")}}
-                        end tell
-                        activate
-                        {applescript_action}
+                    {send_clause}
+                end tell
+                '''
+    else:
+        script = f'''
+                tell application "Microsoft Outlook"
+                    activate
+                    set newMessage to make new outgoing message with properties {{subject:"{safe_subject}", content:"{safe_body}", visible:true}}
+                    tell newMessage
+                        make new to recipient at end of to recipients with properties {{address:"{email_address}"}}
+                        make new attachment with properties {{file:POSIX file "{abs_path}"}}
                     end tell
+                    {send_clause}
+                end tell
                 '''
 
-        }
+    try:
+        print_purple(f"  -> Attempting to open {app_name}...")
+        subprocess.run(
+            ['osascript'],
+            input=script,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        print_green(f"  -> Successfully processed request via {app_name}.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print_orange(f"  -> Could not open {app_name}: {e.stderr.strip()}")
+        return False
 
-        success = False
 
-        for app_name, script in scripts.items():
-            try:
-                print_purple(f"  -> Attempting to open {app_name}...")
+def open_email_with_attachment(recipient_name: str, email_address: str, attachment_path: str,
+                               send_immediately: bool = False):
+    print(f"DEBUG: Processing encrypted file '{attachment_path}' for '{recipient_name}'")
+    abs_path = Path(attachment_path).resolve()
 
-                subprocess.run(['osascript', '-e', script], capture_output=True, text=True, check=True)
+    if not abs_path.exists():
+        print_red(f"  -> ERROR: File not found at {abs_path}")
+        return
 
-                print_green(f"  -> Successfully processed request via {app_name}.")
-                success = True
-                break
+    subject, body = parse_template(recipient_name)
+    current_os = platform.system()
 
-            except subprocess.CalledProcessError as e:
-                print_yellow(f"  -> Could not open {app_name}: {e.stderr.strip()}")
-
-            except Exception as e:
-                print_yellow(f"  -> Failed to communicate with {app_name}: {e}")
-
-            if not success:
-                print_red("  -> ERROR: Could not open either Mail or Microsoft Outlook.")
+    if current_os == "Windows" and handle_windows_outlook(email_address, subject, body, abs_path, send_immediately):
+        return
+    elif current_os == "Darwin":
+        if any(handle_mac_applescript(app, email_address, subject, body, abs_path, send_immediately) for app in
+               ["Mail", "Microsoft Outlook"]):
+            return
     else:
-        print_red(f"  -> OS {platform.system()} not supported.")
+        print_yellow(f"  -> Native automation not supported on OS: {current_os}")
+
+    fallback_to_mailto(email_address, subject, body)
